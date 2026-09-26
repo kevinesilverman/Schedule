@@ -209,7 +209,7 @@ footer{color:var(--faint);font-size:.74rem;text-align:center}
 .tag.gmail{background:rgba(0,131,0,.12);color:var(--green)}
 .tag.carmel{background:rgba(204,85,0,.13);color:#b44a00}
 .tag.t1{background:rgba(179,38,30,.12);color:var(--err)}
-.tag.t2,.tag.t3{background:var(--pill);color:var(--accent)}
+.tag.t2,.tag.t3,.tag.kind{background:var(--pill);color:var(--accent)}
 .note{color:var(--faint);font-size:.82rem;font-style:italic}
 .warn{color:var(--err);font-size:.82rem}
 .ev .src{font-size:.66rem;color:#b44a00;font-weight:600;margin-left:6px}
@@ -233,6 +233,8 @@ def _when(v):
 def _item(it, show_tier=False):
     acct = (it.get("account") or "").lower()
     tags = f'<span class="tag {E(acct)}">{E(it.get("account", ""))}</span>' if acct else ""
+    if it.get("kind"):
+        tags += f' <span class="tag kind">{E(it["kind"])}</span>'
     if show_tier and it.get("tier"):
         tags += f' <span class="tag t{E(str(it["tier"]))}">Tier {E(str(it["tier"]))}</span>'
     href = it.get("link") or ""
@@ -310,11 +312,13 @@ def admin_section(contacts):
 
 def render_dashboard(events, now, icon, inbox=None, contacts=(), note=""):
     # Carmel (Outlook) meetings arrive in the private payload
-    for ce in (inbox or {}).get("carmel_events") or []:
+    extra = [dict(x, src="Carmel") for x in (inbox or {}).get("carmel_events") or []]
+    extra += list((inbox or {}).get("extra_events") or [])   # other Google calendars (UWM, personal, family…)
+    for ce in extra:
         s, e = parse_dt(ce.get("start")), parse_dt(ce.get("end"))
         if s:
             events.append({"title": ce.get("title", "(no title)"), "loc": ce.get("loc", ""),
-                           "start": s, "end": e or s, "all_day": bool(ce.get("all_day")), "src": "Carmel"})
+                           "start": s, "end": e or s, "all_day": bool(ce.get("all_day")), "src": ce.get("src", "")})
     events.sort(key=lambda x: (x["start"], not x["all_day"]))
     today = now.date()
     days = []
