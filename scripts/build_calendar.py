@@ -9,6 +9,7 @@ actions/deploy-pages and never committed to the repo.
 import base64
 import html
 import io
+import json
 import os
 import sys
 from datetime import date, datetime, timedelta
@@ -28,6 +29,9 @@ PBKDF2_ITER = 250000
 OWNER_EMAILS = {e.strip().lower() for e in os.environ.get(
     "OWNER_EMAILS", "kevin.e.silverman@gmail.com").split(",") if e.strip()}
 CUSTOM_DOMAIN = "sched.kevinsilverman.com"
+PRIORITY_SHEET = "https://docs.google.com/spreadsheets/d/1Yw4gwfwqyjX2R9VPXIo7sesJyK6rbSVEC52_aKI3dPg/edit"
+DRIVE_FOLDER = "https://drive.google.com/drive/folders/1xKzLi5RT3Z8MCSdZpTnfvqIxZqMWH6_k"
+STALE_AFTER = timedelta(hours=3)
 OUT = os.environ.get("OUT_DIR", "_site")
 
 
@@ -50,6 +54,30 @@ def fetch_ics():
     if r.status_code != 200 or b"BEGIN:VCALENDAR" not in r.content[:2000]:
         fail(f"calendar fetch failed (HTTP {r.status_code})")
     return r.content
+
+
+# ---------- private inbox data (written by the hourly Claude task) ----------
+def load_private():
+    """Return (inbox_dict_or_None, contacts_list, note). Never fails the build."""
+    if not os.environ.get("INBOX_KEY", "").strip():
+        return None, [], "Inbox data not connected yet"
+    sys.path.insert(0, os.path.dirname(__file__))
+    try:
+        import payload
+        inbox = payload.dec_file("data/inbox.enc")
+        contacts = payload.dec_file("data/contacts.enc") or []
+        return inbox, contacts, ""
+    except Exception as e:  # corrupt / wrong key: show calendar anyway
+        print(f"WARNING: could not read private data ({type(e).__name__})", file=sys.stderr)
+        return None, [], "Inbox data could not be read"
+
+
+def parse_dt(v):
+    try:
+        d = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+        return (d if d.tzinfo else d.replace(tzinfo=TZ)).astimezone(TZ)
+    except Exception:
+        return None
 
 
 # ---------- events ----------
@@ -157,7 +185,7 @@ h1{font-size:1.35rem;margin:0 0 2px;letter-spacing:-.01em}
 .today .dh{color:var(--accent)}
 .pill{background:var(--pill);color:var(--accent);border-radius:20px;padding:1px 8px;font-size:.7rem;margin-left:6px;text-transform:none;letter-spacing:0}
 .ev{display:flex;gap:10px;margin-top:6px}
-.ev .t{color:var(--accent);font-variant-numeric:tabular-nums;font-size:.85rem;white-space:nowrap;min-width:92px;font-weight:500}
+.ev .t{color:var(--accent);font-variant-numeric:tabular-nums;font-size:.85rem;white-space:nowrap;min-width:92px;flex:0 0 auto;font-weight:500}
 .ev .n{font-size:.9rem;min-width:0;overflow-wrap:anywhere}
 .ev .loc{color:var(--muted);font-size:.8rem}
 .ev.allday .t{color:var(--green)}
@@ -165,10 +193,129 @@ h1{font-size:1.35rem;margin:0 0 2px;letter-spacing:-.01em}
 .ev.past .name{text-decoration:line-through;text-decoration-color:var(--dim)}
 .ev.past .t{color:var(--dim)}
 .clear{color:var(--faint);font-size:.85rem;margin-top:4px;font-style:italic}
-footer{color:var(--faint);font-size:.74rem;text-align:center}"""
+footer{color:var(--faint);font-size:.74rem;text-align:center}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}
+.stat{background:var(--surface);border:1px solid var(--hair);border-radius:14px;padding:10px 12px}
+.stat b{display:block;font-size:1.35rem;font-variant-numeric:tabular-nums}
+.stat span{color:var(--muted);font-size:.75rem}
+.item{display:block;padding:9px 0;border-top:1px solid var(--hair);color:inherit;text-decoration:none}
+.item:first-of-type{border-top:0}
+.item .top{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.item .who{font-weight:600;font-size:.9rem}
+.item .when{color:var(--faint);font-size:.75rem;margin-left:auto}
+.item .subj{font-size:.88rem;overflow-wrap:anywhere}
+.item .sum{color:var(--muted);font-size:.82rem;overflow-wrap:anywhere}
+.tag{font-size:.66rem;font-weight:600;border-radius:6px;padding:1px 6px;text-transform:uppercase;letter-spacing:.04em}
+.tag.gmail{background:rgba(0,131,0,.12);color:var(--green)}
+.tag.carmel{background:rgba(204,85,0,.13);color:#b44a00}
+.tag.t1{background:rgba(179,38,30,.12);color:var(--err)}
+.tag.t2,.tag.t3{background:var(--pill);color:var(--accent)}
+.note{color:var(--faint);font-size:.82rem;font-style:italic}
+.warn{color:var(--err);font-size:.82rem}
+.ev .src{font-size:.66rem;color:#b44a00;font-weight:600;margin-left:6px}
+details.admin summary{cursor:pointer;font-weight:600;font-size:.9rem;list-style:none}
+details.admin summary::-webkit-details-marker{display:none}
+.btn{display:inline-block;margin:8px 8px 0 0;padding:8px 12px;border-radius:10px;border:1px solid var(--hair);color:var(--accent);text-decoration:none;font-size:.85rem;font-weight:600}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .tag.carmel,:root:not([data-theme="light"]) .ev .src{color:#f0a060}}
+:root[data-theme="dark"] .tag.carmel,:root[data-theme="dark"] .ev .src{color:#f0a060}"""
 
 
-def render_dashboard(events, now, icon):
+E = html.escape
+
+
+def _when(v):
+    d = parse_dt(v)
+    if not d:
+        return ""
+    return d.strftime("%a ") + fmt_t(d) if d.date() != datetime.now(TZ).date() else fmt_t(d)
+
+
+def _item(it, show_tier=False):
+    acct = (it.get("account") or "").lower()
+    tags = f'<span class="tag {E(acct)}">{E(it.get("account", ""))}</span>' if acct else ""
+    if show_tier and it.get("tier"):
+        tags += f' <span class="tag t{E(str(it["tier"]))}">Tier {E(str(it["tier"]))}</span>'
+    href = it.get("link") or ""
+    tag = "a" if href.startswith("https://") else "div"
+    attr = f' href="{E(href)}" target="_blank" rel="noopener"' if tag == "a" else ""
+    return (f'<{tag} class="item"{attr}><div class="top">{tags}<span class="who">{E(it.get("from", ""))}</span>'
+            f'<span class="when">{E(_when(it.get("when")))}</span></div>'
+            f'<div class="subj">{E(it.get("subject", ""))}</div>'
+            + (f'<div class="sum">{E(it["summary"])}</div>' if it.get("summary") else "")
+            + f"</{tag}>")
+
+
+def _card(title, body):
+    return f'<div class="card"><h2>{title}</h2>{body}</div>'
+
+
+def private_sections(inbox, contacts, note, now):
+    if inbox is None:
+        return _card("Inbox", f'<div class="note">{E(note)}</div>'), 0, "&ndash;"
+    out = []
+    gen = parse_dt(inbox.get("generated_at"))
+    stale = (not gen) or (now - gen) > STALE_AFTER
+    if stale:
+        out.append(f'<div class="card"><div class="warn">Inbox data last refreshed '
+                   f'{E(gen.strftime("%a %b %d, ") + fmt_t(gen)) if gen else "unknown"} &mdash; hourly check may be failing.</div></div>')
+    pri = inbox.get("priority") or []
+    if pri:
+        out.append(_card("Priority people", "".join(_item(x, True) for x in pri)))
+    att = inbox.get("needs_attention") or []
+    noise = inbox.get("noise_summary") or ""
+    out.append(_card("Needs attention",
+                     ("".join(_item(x) for x in att) or '<div class="note">Nothing needs attention.</div>')
+                     + (f'<div class="note" style="margin-top:8px">{E(noise)}</div>' if noise else "")))
+    mt = inbox.get("meetings_added") or []
+    if mt:
+        rows = []
+        for m in mt:
+            href = m.get("event_link") or m.get("link") or ""
+            a = f' href="{E(href)}" target="_blank" rel="noopener"' if href.startswith("https://") else ""
+            rows.append(f'<a class="item"{a}><div class="top"><span class="tag {E((m.get("account") or "").lower())}">{E(m.get("account", ""))}</span>'
+                        f'<span class="who">{E(m.get("with", ""))}</span><span class="when">{E(_when(m.get("start")))}</span></div>'
+                        f'<div class="subj">{E(m.get("where", ""))}</div><div class="sum">Added as tentative &middot; from &ldquo;{E(m.get("subject", ""))}&rdquo;</div></a>')
+        out.append(_card("Meetings found in email", "".join(rows)))
+    cm = inbox.get("commitments") or []
+    if cm:
+        rows = []
+        for c in cm:
+            href = c.get("link") or ""
+            a = f' href="{E(href)}" target="_blank" rel="noopener"' if href.startswith("https://") else ""
+            due = f'<span class="when">due {E(c["due"])}</span>' if c.get("due") else ""
+            rows.append(f'<a class="item"{a}><div class="top"><span class="tag {E((c.get("account") or "").lower())}">{E(c.get("account", ""))}</span>'
+                        f'<span class="who">{E(c.get("to", ""))}</span>{due}</div><div class="subj">{E(c.get("text", ""))}</div></a>')
+        out.append(_card("Promises I made", "".join(rows)))
+    errs = inbox.get("errors") or []
+    if errs:
+        out.append(_card("Check needed", "".join(f'<div class="warn">{E(x)}</div>' for x in errs)))
+    return "".join(out), len(att) + len(pri), sum((inbox.get("volume") or {}).values()) if inbox.get("volume") else "&ndash;"
+
+
+def admin_section(contacts):
+    new = [c for c in contacts if c.get("status") == "new"]
+    rows = "".join(
+        f'<div class="item"><div class="top"><span class="who">{E(((c.get("first") or "") + " " + (c.get("last") or "")).strip() or c.get("email", ""))}</span>'
+        f'<span class="when">{E(c.get("account", ""))}</span></div><div class="sum">{E(" · ".join(x for x in [c.get("title"), c.get("company"), c.get("email"), c.get("phone")] if x))}</div></div>'
+        for c in new[-15:][::-1])
+    return (f'<div class="card"><details class="admin"><summary>&#9881;&#xFE0E; Admin</summary>'
+            f'<a class="btn" href="{PRIORITY_SHEET}" target="_blank" rel="noopener">Priority people list</a>'
+            f'<a class="btn" href="{DRIVE_FOLDER}" target="_blank" rel="noopener">Dashboard folder</a>'
+            f'<div class="note" style="margin-top:10px">Paste or upload a CSV/XLSX into the Priority sheet (columns: name, email, tier 1&ndash;3, note). '
+            f'Takes effect on the next hourly check.</div>'
+            f'<h2 style="margin-top:14px">New contacts for PFS ({len(new)})</h2>'
+            + (rows or '<div class="note">None waiting.</div>')
+            + "</details></div>")
+
+
+def render_dashboard(events, now, icon, inbox=None, contacts=(), note=""):
+    # Carmel (Outlook) meetings arrive in the private payload
+    for ce in (inbox or {}).get("carmel_events") or []:
+        s, e = parse_dt(ce.get("start")), parse_dt(ce.get("end"))
+        if s:
+            events.append({"title": ce.get("title", "(no title)"), "loc": ce.get("loc", ""),
+                           "start": s, "end": e or s, "all_day": bool(ce.get("all_day")), "src": "Carmel"})
+    events.sort(key=lambda x: (x["start"], not x["all_day"]))
     today = now.date()
     days = []
     for i in range(DAYS_AHEAD + 1):
@@ -188,20 +335,26 @@ def render_dashboard(events, now, icon):
                 past = e["end"] <= now
                 cls = "ev past" if past else "ev"
             loc = f' <span class="loc">&middot; {html.escape(e["loc"])}</span>' if e["loc"] else ""
+            src = f'<span class="src">{E(e["src"])}</span>' if e.get("src") else ""
             rows.append(f'<div class="{cls}"><div class="t">{t}</div>'
-                        f'<div class="n"><span class="name">{html.escape(e["title"])}</span>{loc}</div></div>')
+                        f'<div class="n"><span class="name">{html.escape(e["title"])}</span>{src}{loc}</div></div>')
         label = d.strftime("%A, %b ") + str(d.day)
         pill = '<span class="pill">Today</span>' if i == 0 else ""
         body = "".join(rows) or '<div class="clear">Clear day</div>'
         days.append(f'<div class="day{" today" if i == 0 else ""}"><div class="dh">{label}{pill}</div>{body}</div>')
     upcoming = sum(1 for e in events if not e["all_day"] and e["end"] > now)
     stamp = now.strftime("%a %b ") + str(now.day) + ", " + fmt_t(now)
+    priv, n_att, vol = private_sections(inbox, list(contacts), note, now)
+    stats = (f'<div class="stats"><div class="stat"><b>{upcoming}</b><span>meetings ahead</span></div>'
+             f'<div class="stat"><b>{n_att}</b><span>need attention</span></div>'
+             f'<div class="stat"><b>{vol}</b><span>emails, last day</span></div></div>')
     return (f"<!doctype html><html lang=\"en\"><head>{HEAD_META.replace('__ICON__', icon)}"
             f"<style>{TOKENS}\n{DASH_CSS}</style></head><body><div class=\"wrap\">"
-            f"<header><h1>Kevin&rsquo;s Dashboard</h1><div class=\"sub\">Updated {stamp} CT &middot; refreshes hourly"
-            f" &middot; {upcoming} meeting{'s' if upcoming != 1 else ''} ahead</div></header>"
+            f"<header><h1>Kevin&rsquo;s Dashboard</h1><div class=\"sub\">Updated {stamp} CT &middot; refreshes hourly</div></header>"
+            f"{stats}{priv}"
             f"<div class=\"card\"><h2>Week ahead</h2>{''.join(days)}</div>"
-            f"<footer>Live from Google Calendar</footer></div></body></html>")
+            f"{admin_section(list(contacts))}"
+            f"<footer>Google Calendar &middot; Gmail &middot; Carmel Outlook</footer></div></body></html>")
 
 
 # ---------- encrypt + lock screen ----------
@@ -272,8 +425,9 @@ def main():
         fail("DASH_PASSCODE secret is not set")
     now = datetime.now(TZ)
     events = collect(fetch_ics(), now.date())
+    inbox, contacts, note = load_private()
     icon = icon_data_uri()
-    page = lock_page(render_dashboard(events, now, icon), passcode, icon)
+    page = lock_page(render_dashboard(events, now, icon, inbox, contacts, note), passcode, icon)
     os.makedirs(OUT, exist_ok=True)
     with open(os.path.join(OUT, "index.html"), "w") as f:
         f.write(page)
