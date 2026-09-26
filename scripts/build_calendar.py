@@ -31,7 +31,7 @@ OWNER_EMAILS = {e.strip().lower() for e in os.environ.get(
 CUSTOM_DOMAIN = "sched.kevinsilverman.com"
 PRIORITY_SHEET = "https://docs.google.com/spreadsheets/d/1Yw4gwfwqyjX2R9VPXIo7sesJyK6rbSVEC52_aKI3dPg/edit"
 DRIVE_FOLDER = "https://drive.google.com/drive/folders/1xKzLi5RT3Z8MCSdZpTnfvqIxZqMWH6_k"
-PFS_XLSX = "https://carmelcapitalpartners-my.sharepoint.com/personal/kevins_carmelcap_com/_layouts/15/Doc.aspx?sourcedoc=%7B08745FFD-94D2-48B8-B021-EAE477634FD6%7D&file=PFS%20Contacts%20from%20Email.xlsx&action=default&mobileredirect=true"
+PFS_XLSX = "https://drive.google.com/drive/folders/1ZZnzgwPmqGbV4DoCGf7Y3zJcqpJn-UoA"
 STALE_AFTER = timedelta(hours=3)
 OUT = os.environ.get("OUT_DIR", "_site")
 
@@ -304,7 +304,7 @@ def admin_section(contacts):
     return (f'<div class="card"><details class="admin"><summary>&#9881;&#xFE0E; Admin</summary>'
             f'<a class="btn" href="{PRIORITY_SHEET}" target="_blank" rel="noopener">Priority people list</a>'
             f'<a class="btn" href="{DRIVE_FOLDER}" target="_blank" rel="noopener">Dashboard folder</a>'
-            f'<a class="btn" href="{PFS_XLSX}" target="_blank" rel="noopener">PFS contacts (Excel)</a>'
+            f'<a class="btn" href="{PFS_XLSX}" target="_blank" rel="noopener">PFS contacts sheet</a>'
             f'<div class="note" style="margin-top:10px">Paste or upload a CSV/XLSX into the Priority sheet (columns: name, email, tier 1&ndash;3, note). '
             f'Takes effect on the next hourly check.</div>'
             f'<h2 style="margin-top:14px">New contacts for PFS ({len(new)})</h2>'
