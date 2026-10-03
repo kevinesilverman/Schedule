@@ -269,6 +269,9 @@ def private_sections(inbox, contacts, note, now):
     out.append(_card("Needs attention",
                      ("".join(_item(x) for x in att) or '<div class="note">Nothing needs attention.</div>')
                      + (f'<div class="note" style="margin-top:8px">{E(noise)}</div>' if noise else "")))
+    hn = inbox.get("holdings_news") or []
+    if hn:
+        out.append(_card("Holdings news", "".join(_item(x) for x in hn)))
     mt = inbox.get("meetings_added") or []
     if mt:
         rows = []
