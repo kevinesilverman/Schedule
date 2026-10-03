@@ -239,6 +239,7 @@ def _item(it, show_tier=False):
     if show_tier and it.get("tier"):
         tags += f' <span class="tag t{E(str(it["tier"]))}">Tier {E(str(it["tier"]))}</span>'
     href = it.get("link") or ""
+    href = href.replace("https://mail.google.com/mail/u/0/#inbox/", "https://mail.google.com/mail/?authuser=kevin.e.silverman@gmail.com#all/")
     tag = "a" if href.startswith("https://") else "div"
     attr = f' href="{E(href)}" target="_blank" rel="noopener"' if tag == "a" else ""
     return (f'<{tag} class="item"{attr}><div class="top">{tags}<span class="who">{E(it.get("from", ""))}</span>'
@@ -271,7 +272,7 @@ def private_sections(inbox, contacts, note, now):
                      + (f'<div class="note" style="margin-top:8px">{E(noise)}</div>' if noise else "")))
     hn = inbox.get("holdings_news") or []
     if hn:
-        out.append(_card("Holdings news", "".join(_item(x) for x in hn)))
+        out.append(_card("Portfolio news", "".join(_item(x) for x in hn)))
     mt = inbox.get("meetings_added") or []
     if mt:
         rows = []
