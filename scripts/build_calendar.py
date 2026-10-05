@@ -326,6 +326,12 @@ def render_dashboard(events, now, icon, inbox=None, contacts=(), note=""):
             events.append({"title": ce.get("title", "(no title)"), "loc": ce.get("loc", ""),
                            "start": s, "end": e or s, "all_day": bool(ce.get("all_day")), "src": ce.get("src", "")})
     events.sort(key=lambda x: (x["start"], not x["all_day"]))
+    _seen=set(); _dd=[]
+    for _e in events:
+        _k=(" ".join(str(_e.get("title","")).lower().split()), _e["start"])
+        if _k in _seen: continue
+        _seen.add(_k); _dd.append(_e)
+    events[:]=_dd
     today = now.date()
     days = []
     for i in range(DAYS_AHEAD + 1):
