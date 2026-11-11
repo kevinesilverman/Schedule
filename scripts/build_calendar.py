@@ -200,7 +200,7 @@ footer{color:var(--faint);font-size:.74rem;text-align:center}
 .stat b{display:block;font-size:1.35rem;font-variant-numeric:tabular-nums}
 .stat span{color:var(--muted);font-size:.75rem}
 .item{display:block;padding:9px 0;border-top:1px solid var(--hair);color:inherit;text-decoration:none}
-.item:first-of-type{border-top:0}
+.card h2+.item{border-top:0}
 .item .top{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
 .item .who{font-weight:600;font-size:.9rem}
 .item .when{color:var(--faint);font-size:.75rem;margin-left:auto}
@@ -214,6 +214,12 @@ footer{color:var(--faint);font-size:.74rem;text-align:center}
 .note{color:var(--faint);font-size:.82rem;font-style:italic}
 .warn{color:var(--err);font-size:.82rem}
 .ev .src{font-size:.66rem;color:#b44a00;font-weight:600;margin-left:6px}
+details.mail summary{list-style:none;cursor:pointer}
+details.mail summary::-webkit-details-marker{display:none}
+details.mail[open] summary .sum{display:none}
+.mailbody{margin-top:8px;padding:10px 12px;border-radius:10px;background:var(--page);border:1px solid var(--hair)}
+.mailbody .meta{color:var(--faint);font-size:.74rem;margin-bottom:6px;overflow-wrap:anywhere}
+.mailbody .txt{white-space:pre-wrap;font-size:.86rem;overflow-wrap:anywhere;max-height:60vh;overflow:auto}
 details.admin summary{cursor:pointer;font-weight:600;font-size:.9rem;list-style:none}
 details.admin summary::-webkit-details-marker{display:none}
 .btn{display:inline-block;margin:8px 8px 0 0;padding:8px 12px;border-radius:10px;border:1px solid var(--hair);color:var(--accent);text-decoration:none;font-size:.85rem;font-weight:600}
@@ -240,13 +246,22 @@ def _item(it, show_tier=False):
         tags += f' <span class="tag t{E(str(it["tier"]))}">Tier {E(str(it["tier"]))}</span>'
     href = it.get("link") or ""
     href = href.replace("https://mail.google.com/mail/u/0/#inbox/", "https://mail.google.com/mail/?authuser=kevin.e.silverman@gmail.com#all/")
-    tag = "a" if href.startswith("https://") else "div"
-    attr = f' href="{E(href)}" target="_blank" rel="noopener"' if tag == "a" else ""
-    return (f'<{tag} class="item"{attr}><div class="top">{tags}<span class="who">{E(it.get("from", ""))}</span>'
+    head = (f'<div class="top">{tags}<span class="who">{E(it.get("from", ""))}</span>'
             f'<span class="when">{E(_when(it.get("when")))}</span></div>'
             f'<div class="subj">{E(it.get("subject", ""))}</div>'
-            + (f'<div class="sum">{E(it["summary"])}</div>' if it.get("summary") else "")
-            + f"</{tag}>")
+            + (f'<div class="sum">{E(it["summary"])}</div>' if it.get("summary") else ""))
+    # Full email text: Gmail items only. Carmel (client) mail never carries a body here.
+    body = (it.get("body") or "").strip() if acct != "carmel" else ""
+    if body:
+        meta = " &middot; ".join(E(x) for x in (it.get("from_email"), it.get("to"), it.get("date")) if x)
+        btn = (f'<a class="btn" href="{E(href)}" target="_blank" rel="noopener">Open in '
+               f'{"Outlook" if acct == "carmel" else "Gmail"}</a>') if href.startswith("https://") else ""
+        return (f'<details class="item mail"><summary>{head}</summary>'
+                f'<div class="mailbody">' + (f'<div class="meta">{meta}</div>' if meta else "")
+                + f'<div class="txt">{E(body)}</div>{btn}</div></details>')
+    tag = "a" if href.startswith("https://") else "div"
+    attr = f' href="{E(href)}" target="_blank" rel="noopener"' if tag == "a" else ""
+    return f'<{tag} class="item"{attr}>{head}</{tag}>'
 
 
 def _card(title, body):
