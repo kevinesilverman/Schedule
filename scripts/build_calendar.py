@@ -237,6 +237,38 @@ def _when(v):
     return d.strftime("%a ") + fmt_t(d) if d.date() != datetime.now(TZ).date() else fmt_t(d)
 
 
+UWM_OUTLOOK = "https://outlook.office.com/mail/"
+
+
+def _mail_buttons(it, acct, href):
+    """Nov 17: the Gmail message link lands on the inbox in the iPhone Gmail app.
+    Gmail items get a Gmail search link (sender + subject) instead; mail sent to
+    the UWM address also gets an Open UWM Outlook button."""
+    if acct == "carmel":
+        return ""
+    from urllib.parse import quote
+    sender = (it.get("from_email") or "").strip()
+    subj = (it.get("subject") or "").strip()
+    for p in ("Re:", "RE:", "Fwd:", "FW:", "Fw:"):
+        if subj.startswith(p):
+            subj = subj[len(p):].strip()
+    parts = []
+    if sender:
+        parts.append(f"from:{sender}")
+    if subj:
+        parts.append('subject:"' + subj.replace('"', "") + '"')
+    out = ""
+    if parts:
+        q = quote(" ".join(parts), safe="")
+        g = f"https://mail.google.com/mail/?authuser=kevin.e.silverman@gmail.com#search/{q}"
+        out += f'<a class="btn" href="{E(g)}" target="_blank" rel="noopener">Find in Gmail</a>'
+    elif href.startswith("https://"):
+        out += f'<a class="btn" href="{E(href)}" target="_blank" rel="noopener">Open in Gmail</a>'
+    if "uwm.edu" in (it.get("to") or "").lower():
+        out += f'<a class="btn" href="{UWM_OUTLOOK}" target="_blank" rel="noopener">Open UWM Outlook</a>'
+    return out
+
+
 def _item(it, show_tier=False):
     acct = (it.get("account") or "").lower()
     tags = f'<span class="tag {E(acct)}">{E(it.get("account", ""))}</span>' if acct else ""
@@ -256,6 +288,7 @@ def _item(it, show_tier=False):
         meta = " &middot; ".join(E(x) for x in (it.get("from_email"), it.get("to"), it.get("date")) if x)
         btn = (f'<a class="btn" href="{E(href)}" target="_blank" rel="noopener">Open in '
                f'{"Outlook" if acct == "carmel" else "Gmail"}</a>') if href.startswith("https://") else ""
+        btn = _mail_buttons(it, acct, href) or btn
         return (f'<details class="item mail"><summary>{head}</summary>'
                 f'<div class="mailbody">' + (f'<div class="meta">{meta}</div>' if meta else "")
                 + f'<div class="txt">{E(body)}</div>{btn}</div></details>')
